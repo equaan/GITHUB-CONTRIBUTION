@@ -1,0 +1,32 @@
+name: Daily Streak
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC (change if you want)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  streak:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - name: Make empty commit
+        run: |
+          DATE=$(date -u +"%Y-%m-%d %H:%M:%SZ")
+          git commit --allow-empty -m "Streak commit: $DATE"
+          git push origin HEAD:main
