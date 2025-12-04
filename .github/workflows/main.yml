@@ -1,28 +1,22 @@
-name: Daily Streak
-
+name: Streak
 on:
   schedule:
-    # Runs every day at 6 AM UTC
-    - cron: '0 6 * * *'
+  - cron: '0 */1 * * *' 
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
 
 jobs:
-  make-contribution:
+  commit:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_TOKEN }}
+      - uses: actions/checkout@v2
 
-      - name: Configure Git
+      # Runs a single command using the runners shell
+      - name: Run commit script
         run: |
-          git config user.name "equaan"
-          git config user.email "equaankacchi367@gmail.com" # Use your actual email associated with GitHub
-
-      - name: Make daily contribution
-        run: |
-          DATE=$(date "+%Y-%m-%d %H:%M:%S")
-          echo "Daily contribution on $DATE" >> contribution_log.txt
-          git add contribution_log.txt
-          git commit -m "Automated daily contribution: $DATE"
-          git push
+           git config --global user.name ${GITHUB_ACTOR}
+           git config --global user.email ${{ secrets.USER_EMAIl }}
+           git commit --allow-empty -m "Streak grass: `date +'%Y-%m-%d %H:%M:%S'`" 
+           git push origin main
