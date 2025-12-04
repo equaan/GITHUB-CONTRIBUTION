@@ -1,18 +1,16 @@
-name: Daily Streak
+name: Daily Streak - Diagnostic
 
 on:
-  schedule:
-    # Run daily at 06:00 UTC (change if you want)
-    - cron: '0 6 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'   # keep if you want scheduled runs
 
 permissions:
   contents: write
 
 jobs:
-  streak:
+  diag-and-push:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -20,13 +18,64 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           fetch-depth: 0
 
-      - name: Configure git
+      - name: Show basic env & git info
+        run: |
+          echo "GITHUB_REPOSITORY=${{ github.repository }}"
+          echo "GITHUB_ACTOR=${{ github.actor }}"
+          echo "GITHUB_REF=${{ github.ref }}"
+          echo "GITHUB_REF_NAME=${{ github.ref_name }}" || true
+          echo "Default branch (from repo settings): ${{ github.event.repository.default_branch || github.repository }}" || true
+          echo "---- git status ----"
+          git status --porcelain || true
+          echo "---- branches ----"
+          git branch -a || true
+          echo "---- remotes before ----"
+          git remote -v || true
+
+      - name: Configure git identity
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
+      - name: Set remote URL with token (avoid auth popping issues)
+        run: |
+          # Set origin to use the token explicitly to avoid credential helper issues
+          REPO="${{ github.repository }}"
+          echo "Setting origin to use token for https push..."
+          git remote set-url origin "https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${REPO}.git"
+          git remote -v
+
       - name: Make empty commit
+        id: commit_step
         run: |
           DATE=$(date -u +"%Y-%m-%d %H:%M:%SZ")
-          git commit --allow-empty -m "Streak commit: $DATE"
-          git push origin HEAD:main
+          git commit --allow-empty -m "Streak commit: $DATE" || echo "No commit created (but allow-empty should create one)."
+
+      - name: Push to default branch (auto-detect)
+        run: |
+          # Determine branch to push to:
+          # If this run was triggered on a ref, use that; otherwise use repository default branch
+          TARGET_BRANCH="${GITHUB_REF_NAME}"
+          if [ -z "$TARGET_BRANCH" ] || [ "$TARGET_BRANCH" = "refs/heads/" ]; then
+            # fallback: get default branch from GitHub Actions context
+            TARGET_BRANCH="${{ github.event.repository.default_branch }}"
+          fi
+          echo "Target branch resolved to: $TARGET_BRANCH"
+
+          if [ -z "$TARGET_BRANCH" ]; then
+            echo "ERROR: Could not determine target branch. Set TARGET_BRANCH manually."
+            exit 1
+          fi
+
+          echo "Pushing HEAD -> origin/$TARGET_BRANCH ..."
+          # Use explicit refspec to ensure correct remote branch
+          git push "https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:refs/heads/"$TARGET_BRANCH" || {
+            echo "Push failed — printing diagnostics..."
+            echo "---- git remote -v ----"
+            git remote -v
+            echo "---- git branch -a ----"
+            git branch -a
+            echo "---- last 5 commits ----"
+            git --no-pager log -5 --oneline || true
+            exit 1
+          }
